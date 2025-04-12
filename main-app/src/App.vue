@@ -14,6 +14,11 @@ const apps = [
     name: 'sub-app2',
     js: '/sub-app2/sub-app2.js',
     css: '/sub-app2/style.css'
+  },
+  {
+    name: 'react-app',
+    js: '/react-app/react-app.js',
+    css: '/react-app/style.css'
   }
 ]
 
@@ -100,6 +105,12 @@ onUnmounted(async () => {
           <h2>子应用2区域</h2>
           <div class="sub-app-mount-point">
             <div id="sub-app2-mount"></div>
+          </div>
+        </div>
+        <div v-show="currentApp === 'react-app'" class="sub-app-wrapper" data-sub-app="true">
+          <h2>react-app区域</h2>
+          <div class="sub-app-mount-point">
+            <div id="react-app-mount"></div>
           </div>
         </div>
       </div>
