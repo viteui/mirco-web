@@ -8,14 +8,12 @@ const apps = [
   {
     name: 'sub-app1',
     js: '/sub-app/sub-app.js',
-    css: '/sub-app/style.css',
-    mountPoint: '#sub-app-mount'
+    css: '/sub-app/style.css'
   },
   {
     name: 'sub-app2',
     js: '/sub-app2/sub-app2.js',
-    css: '/sub-app2/style.css',
-    mountPoint: '#sub-app2-mount'
+    css: '/sub-app2/style.css'
   }
 ]
 
@@ -91,14 +89,14 @@ onUnmounted(async () => {
       </div>
 
       <div class="sub-apps-container">
-        <div v-show="currentApp === 'sub-app1'" class="sub-app-wrapper">
+        <div v-show="currentApp === 'sub-app1'" class="sub-app-wrapper" data-sub-app="true">
           <h2>子应用1区域</h2>
           <div class="sub-app-mount-point">
-            <div id="sub-app-mount"></div>
+            <div id="sub-app1-mount"></div>
           </div>
         </div>
 
-        <div v-show="currentApp === 'sub-app2'" class="sub-app-wrapper">
+        <div v-show="currentApp === 'sub-app2'" class="sub-app-wrapper" data-sub-app="true">
           <h2>子应用2区域</h2>
           <div class="sub-app-mount-point">
             <div id="sub-app2-mount"></div>
@@ -190,7 +188,7 @@ main {
   min-height: 200px;
 }
 
-#sub-app-mount,
+#sub-app1-mount,
 #sub-app2-mount {
   width: 100%;
   height: 100%;

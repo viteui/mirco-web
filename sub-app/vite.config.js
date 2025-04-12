@@ -50,6 +50,7 @@ const cssNamespacePlugin = () => {
             const [selector, ...rest] = rule.split('{');
             // 跳过@规则和已有命名空间的规则
             if (selector.trim().startsWith('@')) return rule + '}';
+            // 跳过已有命名空间的规则
             if (selector.includes('[data-sub-app="true"]')) return rule + '}';
             // 跳过全局样式
             if (selector.trim().startsWith(':root') || selector.trim().startsWith('body') || selector.trim().startsWith('html')) {

@@ -70,11 +70,9 @@ export default defineConfig({
     cssNamespacePlugin()
   ],
   server: {
-    port: 5174,
-    cors: true,
-    origin: 'http://localhost:5174'
+    port: 5175,  // 使用不同的端口
+    cors: true
   },
-  base: '/sub-app2/',
   build: {
     outDir: '../main-app/public/sub-app2',  // 输出到主应用的 public 目录下的 sub-app2 文件夹
     // 同时支持独立运行和微应用模式
