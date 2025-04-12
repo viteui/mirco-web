@@ -1,12 +1,14 @@
 import { EnhancedJsSandbox } from './sandbox';
 
-// 加载远程组件的核心逻辑
+// 加载远程应用的核心逻辑
 export class MicroLoader {
   constructor() {
-    this.components = new Map();
+    this.apps = new Map();
     this.styles = new Map();
     this.sandboxes = new Map();
     console.log('MicroLoader initialized');
+    // 在构造函数中设置环境变量
+    window.__MICRO_APP_ENVIRONMENT__ = true;
   }
 
   // 创建沙箱实例
@@ -42,7 +44,6 @@ export class MicroLoader {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = url;
-      // 为每个应用的样式添加特定的属性，用于后续的样式隔离
       link.setAttribute('data-micro-app', appName);
       link.onload = () => {
         console.log('Style loaded successfully:', url);
@@ -57,73 +58,81 @@ export class MicroLoader {
     });
   }
 
-  // 注册远程组件
-  registerComponent(name, component) {
-    console.log('Registering component:', name);
-    this.components.set(name, component);
-  }
-
-  // 获取已注册的组件
-  getComponent(name) {
-    console.log('Getting component:', name);
-    const component = this.components.get(name);
-    console.log('Component found:', !!component);
-    return component;
-  }
-
-  // 在沙箱环境中加载脚本
-  async loadScriptInSandbox(url, sandbox) {
-    console.log('Loading script in sandbox:', url);
-    const response = await fetch(url);
-    const code = await response.text();
-    
-    // 将代码包装在立即执行函数中，并注入代理的 window 对象
-    const wrappedCode = `
-      (function(window) {
-        with(window) {
-          ${code}
-        }
-      })(window.__MICRO_APP_PROXY__);
-    `;
-    
-    // 执行包装后的代码
-    const scriptElement = document.createElement('script');
-    scriptElement.text = wrappedCode;
-    document.head.appendChild(scriptElement);
-    document.head.removeChild(scriptElement);
-  }
-
   // 加载远程应用
-  async loadApp(appConfig) {
-    const { name, js, css } = appConfig;
-    console.log('Loading app:', name, { js, css });
+  async loadApp(config) {
+    const { name, js, css, mountPoint } = config;
+    console.log('Loading app config:', config);
     
-    try {
-      // 创建并激活沙箱
-      const sandbox = this.createSandbox(name);
-      sandbox.activate();
+    // 如果应用已经加载，直接返回
+    if (this.apps.has(name)) {
+      console.log('App already loaded:', name);
+      return;
+    }
+    
+    // 加载 JS
+    const script = await this.loadScript(js);
+    console.log('Script loaded:', js);
+    
+    // 加载 CSS
+    if (css) {
+      await this.loadStyle(css, name);
+      console.log('Style loaded:', css);
+    }
+    
+    // 创建沙箱
+    const sandbox = this.createSandbox(name);
+    
+    // 存储应用实例和配置
+    const appInstance = window[`microApp${name.replace('sub-app', '')}`];
+    console.log('Looking for app instance:', `microApp${name.replace('sub-app', '')}`, window[`microApp${name.replace('sub-app', '')}`]);
+    
+    if (appInstance) {
+      this.apps.set(name, {
+        instance: appInstance,
+        mountPoint
+      });
+      // 初始化应用
+      await appInstance.bootstrap?.();
+      console.log('App bootstrapped:', name);
+    } else {
+      console.error(`App instance not found for ${name}`);
+    }
 
-      // 加载 CSS
-      if (css) {
-        await this.loadStyle(css, name);
-      }
-      
-      // 在沙箱环境中加载 JS
-      if (js) {
-        await this.loadScriptInSandbox(js, sandbox);
-      }
+    // 设置微应用环境标识
+    window.__MICRO_APP_ENVIRONMENT__ = true;
 
-      console.log('App loaded successfully:', name);
-    } catch (error) {
-      console.error('Failed to load app:', name, error);
-      throw error;
+    console.log('App loaded successfully:', name);
+  }
+
+  // 挂载应用
+  async mountApp(appName) {
+    const app = this.apps.get(appName);
+    if (!app) {
+      console.error(`App ${appName} not found`);
+      return;
+    }
+
+    console.log('Mounting app:', appName, 'to mount point:', app.mountPoint);
+    if (app.instance && typeof app.instance.mount === 'function') {
+      // 将挂载点信息传递给子应用
+      await app.instance.mount(app.mountPoint);
+      console.log('App mounted:', appName);
     }
   }
 
   // 卸载应用
-  unloadApp(appName) {
-    console.log('Unloading app:', appName);
-    
+  async unmountApp(appName) {
+    const app = this.apps.get(appName);
+    if (!app) {
+      console.error(`App ${appName} not found`);
+      return;
+    }
+
+    if (app.instance && typeof app.instance.unmount === 'function') {
+      await app.instance.unmount();
+      console.log('App unmounted:', appName);
+    }
+
     // 停用并清理沙箱
     const sandbox = this.sandboxes.get(appName);
     if (sandbox) {
@@ -138,8 +147,8 @@ export class MicroLoader {
       this.styles.delete(appName);
     }
     
-    // 清理组件注册
-    this.components.delete(appName);
+    // 清理应用实例
+    this.apps.delete(appName);
     console.log('App unloaded:', appName);
   }
 }

@@ -1,38 +1,33 @@
-import { createApp, defineComponent, h } from 'vue'
+import { createApp } from 'vue'
 import App from './App.vue'
 
 // 创建 Vue 应用实例
-const app = createApp(App)
+let app = null
 
-// 将子应用包装成组件
-const SubApp = defineComponent({
-  name: 'SubApp',
-  setup() {
-    return () => h(App)
+// 导出生命周期钩子供主应用调用
+window.microApp1 = {
+  bootstrap: async () => {
+    console.log('sub-app bootstrapped')
+    app = createApp(App)
+  },
+  mount: async (mountPoint) => {
+    console.log('Mounting sub-app to:', mountPoint)
+    if (app) {
+      app.mount(mountPoint || '#sub-app-mount')
+    }
+  },
+  unmount: async () => {
+    console.log('Unmounting sub-app')
+    if (app) {
+      app.unmount()
+      app = null
+    }
   }
-})
-
-// 检查是否在微应用模式下运行
-const isMicroApp = window.registerMicroComponent !== undefined;
-
-console.log('Starting sub-app initialization');
-console.log('isMicroApp mode:', isMicroApp);
-console.log('Running in sandbox:', window.__MICRO_APP_PROXY__ !== undefined);
-
-if (isMicroApp) {
-  // 微应用模式：注册组件
-  console.log('Registering sub-app component');
-  window.registerMicroComponent('sub-app', SubApp);
-  console.log('Sub-app component registered');
-} else {
-  // 独立运行模式：直接挂载
-  console.log('Mounting sub-app in standalone mode');
-  app.mount('#app');
-  console.log('Sub-app mounted');
 }
 
-// 测试沙箱隔离
-if (window.__MICRO_APP_PROXY__) {
-  window.testVar = 'This is a test variable in sandbox';
-  console.log('Test variable in sandbox:', window.testVar);
+// 如果不在微前端环境下，直接挂载应用
+if (!window.__MICRO_APP_ENVIRONMENT__) {
+  console.log('Mounting sub-app in standalone mode')
+  app = createApp(App)
+  app.mount('#app')
 }

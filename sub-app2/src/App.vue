@@ -7,6 +7,17 @@ const theme = ref('light')
 const toggleTheme = () => {
   theme.value = theme.value === 'light' ? 'dark' : 'light'
 }
+
+const addCount = () => {
+  console.log('addCount called')
+  count.value = count.value + 1
+  console.log('New count value:', count.value)
+  
+  // 只有需要通知主应用时才发送事件
+  if (window.__MICRO_APP_ENVIRONMENT__) {
+    window.microApp?.dispatch({ type: 'count', data: count.value })
+  }
+}
 </script>
 
 <template>
@@ -20,7 +31,7 @@ const toggleTheme = () => {
     <div class="content">
       <p>这是子应用2的内容</p>
       <div class="counter-section">
-        <button class="counter-btn" @click="count++">
+        <button class="counter-btn" @click="addCount">
           点击计数: {{ count }}
         </button>
         <div class="count-display">

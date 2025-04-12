@@ -1,4 +1,63 @@
 <script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
+
+const count = ref(0)
+
+const addCount = () => {
+  count.value++
+  console.log('Count changed Sub-app1:', count.value)
+}
+
+const isPopupOpen = ref(false)
+const openPopup = () => {
+  isPopupOpen.value = true
+  window.microApp?.dispatch({ type: 'openPopup' })
+  // 子应用打开Modal
+  const modal = document.createElement('div')
+  modal.style.position = 'fixed'
+  modal.style.top = '50%'
+  modal.style.left = '50%'
+  modal.style.transform = 'translate(-50%, -50%)'
+  modal.style.backgroundColor = 'white'
+  modal.style.padding = '20px'
+  modal.style.borderRadius = '8px'
+  modal.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)'
+  modal.style.zIndex = '1000'
+  modal.innerHTML = `
+    <h3>子应用弹窗 原生</h3>
+    <p>这是子应用的弹窗内容</p>
+  `
+  document.body.appendChild(modal)
+  // 添加关闭按钮
+  const closeButton = document.createElement('button')
+  closeButton.textContent = '关闭'
+  closeButton.style.marginTop = '10px'
+  closeButton.style.padding = '5px 10px'
+  closeButton.style.borderRadius = '4px'
+  closeButton.style.cursor = 'pointer'
+  closeButton.style.backgroundColor = 'red'
+  closeButton.style.color = 'white'
+  closeButton.style.border = 'none'
+  closeButton.style.transition = 'background-color 0.3s ease'
+  closeButton.style.marginLeft = '10px'
+
+  closeButton.addEventListener('click', () => {
+    document.body.removeChild(modal)
+  })
+
+  modal.appendChild(closeButton)
+  // 添加点击事件监听
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      document.body.removeChild(modal)
+    }
+  })
+
+}
+
+const closePopup = () => {
+  isPopupOpen.value = false
+}
 </script>
 
 <template>
@@ -6,7 +65,19 @@
     <h2 style="color: red;">子应用</h2>
     <div class="content">
       <p>这是子应用的内容</p>
-      <button class="action-btn">点击我</button>
+      <button class="action-btn" @click="addCount">点击我+</button>
+      <p>当前计数: {{ count }}</p>
+
+      <button class="action-btn" @click="openPopup">打开弹窗1</button>
+      <button class="action-btn" @click="closePopup">关闭弹窗</button>
+      <!-- 弹窗组件 -->
+      <div v-if="isPopupOpen" class="popup-modal">
+        <h3>子应用弹窗</h3>
+        <p>这是子应用的弹窗内容</p>
+        <button class="action-btn" @click="addCount">点击我+</button>
+        <p>当前计数: {{ count }}</p>
+        <button class="action-btn" @click="closePopup">关闭弹窗</button>
+      </div>
     </div>
   </div>
 </template>
@@ -19,6 +90,18 @@
   font-weight: 400;
   color-scheme: light dark;
 }
+
+.popup-modal {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  width: 500px;
+  height: 500px;
+  border: 1px solid red;
+  background-color: white;
+  color: black;
+}
+
 
 /* 子应用容器样式 */
 .sub-app {
@@ -98,4 +181,6 @@
     --hover-color: #646cff;
   }
 }
+
+
 </style>
