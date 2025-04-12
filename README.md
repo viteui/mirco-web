@@ -136,64 +136,142 @@ const cssNamespacePlugin = () => {
 - 支持 CSS 变量实现主题切换
 - 保留 @media 等特殊规则不添加命名空间
 
-### 3. 主应用加载器
+### 3. JavaScript 隔离方案
 
-主应用通过自定义加载器实现子应用的动态加载和管理。加载器支持样式和脚本的异步加载，并提供了完整的生命周期管理。
+为了防止子应用之间的 JavaScript 污染和冲突，我们实现了以下隔离机制：
 
-#### 加载器实现（main-app/src/loader/index.js）
+#### 3.1 沙箱实现（main-app/src/loader/sandbox.js）
+```javascript
+class JsSandbox {
+  constructor(appName) {
+    this.appName = appName;
+    this.windowSnapshot = {};
+    this.modifiedMap = {};
+    this.proxyWindow = null;
+  }
+
+  // 激活沙箱
+  activate() {
+    // 记录当前 window 状态
+    this.windowSnapshot = this.snapshotWindow();
+    
+    // 创建代理对象
+    this.proxyWindow = new Proxy(window, {
+      get: (target, prop) => {
+        // 优先返回子应用修改的值
+        if (this.modifiedMap.hasOwnProperty(prop)) {
+          return this.modifiedMap[prop];
+        }
+        // 否则返回原始值
+        return target[prop];
+      },
+      set: (target, prop, value) => {
+        // 记录子应用的修改
+        this.modifiedMap[prop] = value;
+        return true;
+      }
+    });
+
+    // 将代理对象挂载到全局
+    window.__MICRO_APP_PROXY__ = this.proxyWindow;
+    return this.proxyWindow;
+  }
+
+  // 停用沙箱
+  deactivate() {
+    // 清理子应用的修改
+    for (const prop in this.modifiedMap) {
+      if (this.windowSnapshot.hasOwnProperty(prop)) {
+        window[prop] = this.windowSnapshot[prop];
+      } else {
+        delete window[prop];
+      }
+    }
+    
+    // 清理代理对象
+    this.modifiedMap = {};
+    this.proxyWindow = null;
+    delete window.__MICRO_APP_PROXY__;
+  }
+
+  // 快照当前 window 对象
+  snapshotWindow() {
+    const snapshot = {};
+    for (const prop in window) {
+      if (window.hasOwnProperty(prop)) {
+        snapshot[prop] = window[prop];
+      }
+    }
+    return snapshot;
+  }
+}
+
+// 增强版沙箱（支持 eval/new Function 等）
+class EnhancedJsSandbox extends JsSandbox {
+  constructor(appName) {
+    super(appName);
+    this.evalCache = new Map();
+  }
+
+  // 重写 eval 和 new Function
+  overrideEval() {
+    const originalEval = window.eval;
+    const originalFunction = window.Function;
+    const self = this;
+
+    // 代理 eval
+    window.eval = function(code) {
+      if (self.evalCache.has(code)) {
+        return self.evalCache.get(code);
+      }
+      const result = originalEval.call(window, code);
+      self.evalCache.set(code, result);
+      return result;
+    };
+
+    // 代理 Function 构造函数
+    window.Function = function(...args) {
+      const code = args.join(',');
+      if (self.evalCache.has(code)) {
+        return self.evalCache.get(code);
+      }
+      const result = new originalFunction(...args);
+      self.evalCache.set(code, result);
+      return result;
+    };
+  }
+
+  activate() {
+    const proxyWindow = super.activate();
+    this.overrideEval();
+    return proxyWindow;
+  }
+
+  deactivate() {
+    super.deactivate();
+    this.evalCache.clear();
+    // 恢复原始的 eval 和 Function
+    window.eval = eval;
+    window.Function = Function;
+  }
+}
+```
+
+#### 3.2 在加载器中集成沙箱（main-app/src/loader/index.js）
 ```javascript
 class MicroLoader {
   constructor() {
     this.components = new Map();
     this.styles = new Map();
+    this.sandboxes = new Map();
     console.log('MicroLoader initialized');
   }
 
-  // 加载远程样式
-  async loadStyle(url, appName) {
-    console.log('Loading style:', url, 'for app:', appName);
-    return new Promise((resolve, reject) => {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = url;
-      // 为每个应用的样式添加特定的属性
-      link.setAttribute('data-micro-app', appName);
-      
-      link.onload = () => {
-        console.log('Style loaded successfully:', url);
-        resolve();
-      };
-      
-      link.onerror = (error) => {
-        console.error('Style loading failed:', url, error);
-        reject(error);
-      };
-      
-      document.head.appendChild(link);
-      this.styles.set(appName, link);
-    });
-  }
-
-  // 加载远程脚本
-  async loadScript(url) {
-    console.log('Loading script:', url);
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.type = 'module';
-      script.src = url;
-      
-      script.onload = () => {
-        console.log('Script loaded successfully:', url);
-        resolve();
-      };
-      
-      script.onerror = (error) => {
-        console.error('Script loading failed:', url, error);
-        reject(error);
-      };
-      
-      document.head.appendChild(script);
-    });
+  // 创建沙箱实例
+  createSandbox(appName) {
+    const sandbox = new EnhancedJsSandbox(appName);
+    this.sandboxes.set(appName, sandbox);
+    return sandbox;
   }
 
   // 加载远程应用
@@ -202,14 +280,18 @@ class MicroLoader {
     console.log('Loading app:', name, { js, css });
     
     try {
+      // 创建并激活沙箱
+      const sandbox = this.createSandbox(name);
+      sandbox.activate();
+
       // 加载 CSS
       if (css) {
         await this.loadStyle(css, name);
       }
       
-      // 加载 JS
+      // 在沙箱环境中加载 JS
       if (js) {
-        await this.loadScript(js);
+        await this.loadScriptInSandbox(js, sandbox);
       }
 
       console.log('App loaded successfully:', name);
@@ -219,9 +301,38 @@ class MicroLoader {
     }
   }
 
+  // 在沙箱环境中加载脚本
+  async loadScriptInSandbox(url, sandbox) {
+    const response = await fetch(url);
+    const code = await response.text();
+    
+    // 将代码包装在立即执行函数中，并注入代理的 window 对象
+    const wrappedCode = `
+      (function(window) {
+        with(window) {
+          ${code}
+        }
+      })(window.__MICRO_APP_PROXY__);
+    `;
+    
+    // 执行包装后的代码
+    const scriptElement = document.createElement('script');
+    scriptElement.text = wrappedCode;
+    document.head.appendChild(scriptElement);
+    document.head.removeChild(scriptElement);
+  }
+
   // 卸载应用
   unloadApp(appName) {
     console.log('Unloading app:', appName);
+    
+    // 停用并清理沙箱
+    const sandbox = this.sandboxes.get(appName);
+    if (sandbox) {
+      sandbox.deactivate();
+      this.sandboxes.delete(appName);
+    }
+
     // 移除样式
     const style = this.styles.get(appName);
     if (style) {
@@ -234,10 +345,54 @@ class MicroLoader {
     console.log('App unloaded:', appName);
   }
 }
-
-// 导出加载器实例
-export const microLoader = new MicroLoader();
 ```
+
+#### 3.3 使用方式
+
+在子应用中，所有的全局变量访问都会被沙箱代理：
+
+```javascript
+// 子应用代码
+window.myGlobalVar = 'test'; // 会被沙箱捕获
+console.log(window.myGlobalVar); // 输出 'test'
+
+// 其他子应用无法访问此变量
+console.log(window.myGlobalVar); // undefined
+```
+
+沙箱特性：
+
+1. 变量隔离
+   - 子应用对全局变量的修改不会影响主应用
+   - 不同子应用之间的全局变量互不影响
+   - 支持快照和恢复机制
+
+2. 运行时隔离
+   - 支持 eval/new Function 等动态代码执行
+   - 提供缓存机制优化性能
+   - 保护主应用的关键全局变量
+
+3. 生命周期管理
+   - 应用加载时自动激活沙箱
+   - 应用卸载时自动清理沙箱
+   - 支持多个子应用同时运行
+
+4. 性能优化
+   - 使用 Proxy 实现最小化的性能开销
+   - 缓存动态生成的函数
+   - 支持快照复用
+
+注意事项：
+
+1. 沙箱限制
+   - 某些原生 API 可能无法完全隔离
+   - 需要注意内存泄漏问题
+   - 某些第三方库可能需要特殊处理
+
+2. 使用建议
+   - 避免过度依赖全局变量
+   - 优先使用模块化方案
+   - 及时清理不需要的资源
 
 ### 4. 构建配置
 

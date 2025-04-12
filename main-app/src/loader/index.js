@@ -1,9 +1,19 @@
+import { EnhancedJsSandbox } from './sandbox';
+
 // 加载远程组件的核心逻辑
 export class MicroLoader {
   constructor() {
     this.components = new Map();
     this.styles = new Map();
+    this.sandboxes = new Map();
     console.log('MicroLoader initialized');
+  }
+
+  // 创建沙箱实例
+  createSandbox(appName) {
+    const sandbox = new EnhancedJsSandbox(appName);
+    this.sandboxes.set(appName, sandbox);
+    return sandbox;
   }
 
   // 加载远程脚本
@@ -61,20 +71,46 @@ export class MicroLoader {
     return component;
   }
 
+  // 在沙箱环境中加载脚本
+  async loadScriptInSandbox(url, sandbox) {
+    console.log('Loading script in sandbox:', url);
+    const response = await fetch(url);
+    const code = await response.text();
+    
+    // 将代码包装在立即执行函数中，并注入代理的 window 对象
+    const wrappedCode = `
+      (function(window) {
+        with(window) {
+          ${code}
+        }
+      })(window.__MICRO_APP_PROXY__);
+    `;
+    
+    // 执行包装后的代码
+    const scriptElement = document.createElement('script');
+    scriptElement.text = wrappedCode;
+    document.head.appendChild(scriptElement);
+    document.head.removeChild(scriptElement);
+  }
+
   // 加载远程应用
   async loadApp(appConfig) {
     const { name, js, css } = appConfig;
     console.log('Loading app:', name, { js, css });
     
     try {
+      // 创建并激活沙箱
+      const sandbox = this.createSandbox(name);
+      sandbox.activate();
+
       // 加载 CSS
       if (css) {
         await this.loadStyle(css, name);
       }
       
-      // 加载 JS
+      // 在沙箱环境中加载 JS
       if (js) {
-        await this.loadScript(js);
+        await this.loadScriptInSandbox(js, sandbox);
       }
 
       console.log('App loaded successfully:', name);
@@ -87,6 +123,14 @@ export class MicroLoader {
   // 卸载应用
   unloadApp(appName) {
     console.log('Unloading app:', appName);
+    
+    // 停用并清理沙箱
+    const sandbox = this.sandboxes.get(appName);
+    if (sandbox) {
+      sandbox.deactivate();
+      this.sandboxes.delete(appName);
+    }
+
     // 移除样式
     const style = this.styles.get(appName);
     if (style) {
